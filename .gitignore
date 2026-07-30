@@ -1,0 +1,28 @@
+# Dependencies (installed separately in server/ and client/)
+node_modules/
+
+# Environment variables -- never commit real secrets/credentials.
+.env
+.env.local
+.env.*.local
+server/.env
+client/.env
+
+# Build output
+client/dist/
+server/dist/
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# Editor / OS cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local Postgres data volume, if ever mounted to a host path instead of a
+# named Docker volume
+pgdata/

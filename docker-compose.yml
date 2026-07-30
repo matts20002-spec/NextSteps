@@ -1,0 +1,66 @@
+# Local development stack: a real PostgreSQL database + the backend API,
+# both containerized. This mirrors (in miniature) the RDS + ECS Fargate
+# relationship from the course's target AWS architecture, without needing
+# an AWS account to develop against.
+#
+# Usage: docker compose up --build
+# That's it -- on a fresh volume, Postgres automatically runs
+# server/sql/schema.sql and server/sql/seed_jobs.sql (see the `db` volumes
+# below), and the backend seeds the admin account on startup. If you're
+# upgrading from an older run that already initialized its data directory
+# without the schema, Postgres's auto-init won't retroactively fire -- run
+# `docker compose down -v` first to wipe the volume and start clean
+# (this deletes local dev data only, nothing in AWS).
+#
+# The frontend is intentionally NOT included here -- run it directly with
+# `npm run dev` inside client/ (see README), since in production it's built
+# to static files and served from S3/CloudFront rather than run as a service.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: job_portal
+    ports:
+      - '5432:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # Postgres's official image runs any .sql/.sh files found here, in
+      # filename order, but ONLY the very first time a container starts
+      # against an empty data directory. That's what gives a fresh
+      # `docker compose up` a ready-to-use schema + sample jobs for free.
+      - ./server/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./server/sql/seed_jobs.sql:/docker-entrypoint-initdb.d/02-seed-jobs.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./server
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/job_portal
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      SES_SENDER_EMAIL: ${SES_SENDER_EMAIL}
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-string}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      PORT: 3000
+    depends_on:
+      db:
+        condition: service_healthy
+    # Seed the admin account (idempotent -- see seedAdmin.js) every time the
+    # container starts, then run the server. `|| true` means a missing
+    # ADMIN_EMAIL/ADMIN_PASSWORD logs a warning instead of blocking startup,
+    # so you still get a working job board even before you've set them.
+    command: sh -c "node scripts/seedAdmin.js || true; node src/index.js"
+
+volumes:
+  db-data:
