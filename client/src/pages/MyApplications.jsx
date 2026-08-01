@@ -6,7 +6,7 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import Illustration from '../components/Illustration.jsx';
 
-// A student's own applications and their current status.
+// An applicant's own applications and their current status.
 export default function MyApplications() {
   const { token } = useAuth();
   const [applications, setApplications] = useState([]);

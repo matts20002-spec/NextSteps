@@ -4,9 +4,10 @@ import { MapPin, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 
-// Single job posting, plus (for logged-in students) an apply form that
-// uploads a résumé file straight to the /api/applications endpoint, which
-// forwards it to S3.
+// Single job posting, plus (for logged-in applicants) an apply form that
+// uploads a résumé straight to S3 via a presigned URL (never through our
+// own API), then submits the application referencing the resulting key.
+// See server/src/routes/applications.js for the /presign endpoint.
 export default function JobDetail() {
   const { jobId } = useParams();
   const navigate = useNavigate();
@@ -15,7 +16,10 @@ export default function JobDetail() {
   const [job, setJob] = useState(null);
   const [error, setError] = useState('');
   const [resumeFile, setResumeFile] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
+  // 'idle' | 'uploading' | 'submitting' -- distinct stages of the apply
+  // flow, since it's now two network round-trips (S3, then our API)
+  // instead of one.
+  const [stage, setStage] = useState('idle');
   const [applied, setApplied] = useState(false);
 
   useEffect(() => {
@@ -32,20 +36,32 @@ export default function JobDetail() {
       return;
     }
 
-    setSubmitting(true);
     setError('');
 
-    const formData = new FormData();
-    formData.append('jobId', jobId);
-    formData.append('resume', resumeFile);
-
     try {
-      await api.postForm('/applications', formData, token);
+      setStage('uploading');
+      const { url, key } = await api.post(
+        '/applications/presign',
+        { filename: resumeFile.name, contentType: resumeFile.type },
+        token
+      );
+
+      const uploadResponse = await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': resumeFile.type },
+        body: resumeFile,
+      });
+      if (!uploadResponse.ok) {
+        throw new Error('Failed to upload résumé. Please try again.');
+      }
+
+      setStage('submitting');
+      await api.post('/applications', { jobId, resumeS3Key: key }, token);
       setApplied(true);
     } catch (err) {
       setError(err.message);
     } finally {
-      setSubmitting(false);
+      setStage('idle');
     }
   }
 
@@ -94,8 +110,12 @@ export default function JobDetail() {
               {error}
             </p>
           )}
-          <button type="submit" disabled={submitting}>
-            {submitting ? 'Submitting...' : 'Submit Application'}
+          <button type="submit" disabled={stage !== 'idle'}>
+            {stage === 'uploading'
+              ? 'Uploading résumé...'
+              : stage === 'submitting'
+                ? 'Submitting...'
+                : 'Submit Application'}
           </button>
         </form>
       )}

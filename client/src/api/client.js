@@ -4,17 +4,21 @@
 //   - throws a real Error (with the server's message) on non-2xx responses
 //
 // This is intentionally simple -- no interceptors, no query-caching library
-// -- so students can trace exactly what happens on every request.
+// -- so it's easy to trace exactly what happens on every request. There's
+// no form-data variant: résumé uploads go straight from the browser to a
+// presigned S3 URL, never through this API (see JobDetail.jsx), so every
+// request/response body here is JSON.
 
-async function request(path, { method = 'GET', body, token, isFormData = false } = {}) {
-  const headers = {};
+import { API_BASE } from './config.js';
+
+async function request(path, { method = 'GET', body, token } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
-  if (!isFormData) headers['Content-Type'] = 'application/json';
 
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(`${API_BASE}${path}`, {
     method,
     headers,
-    body: isFormData ? body : body ? JSON.stringify(body) : undefined,
+    body: body ? JSON.stringify(body) : undefined,
   });
 
   // 204 No Content has no body to parse.
@@ -32,5 +36,4 @@ export const api = {
   post: (path, body, token) => request(path, { method: 'POST', body, token }),
   put: (path, body, token) => request(path, { method: 'PUT', body, token }),
   del: (path, token) => request(path, { method: 'DELETE', token }),
-  postForm: (path, formData, token) => request(path, { method: 'POST', body: formData, token, isFormData: true }),
 };

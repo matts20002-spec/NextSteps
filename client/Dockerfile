@@ -1,11 +1,9 @@
-# Dockerfile for the frontend -- OPTIONAL, and only useful for previewing
-# the production build locally in a container.
-#
-# In the real AWS deployment, the frontend is NOT run as a container: `npm
-# run build` produces static files (in dist/) that get uploaded to an S3
-# bucket and served through CloudFront. This Dockerfile just reproduces that
-# same build inside Docker and serves the result with nginx so you can sanity
-# check the production build before shipping it to S3.
+# Dockerfile for the frontend. Used both for local Docker Compose (where
+# nginx also reverse-proxies /api/* to the backend container, see
+# nginx.conf) and, optionally, to sanity-check the production build before
+# shipping client/static to S3 -- in the real AWS deployment the frontend is
+# uploaded to S3 and served through CloudFront instead of running as a
+# container there.
 
 # ---- Stage 1: build the static assets with Vite ----
 FROM node:20-alpine AS build
@@ -13,10 +11,17 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install
 COPY . .
+# Build-time API base URL. Leave unset for local dev (Docker Compose or
+# CloudFront both proxy relative '/api' paths); set it to the backend's
+# public HTTPS URL when building for S3/CloudFront production. See
+# client/src/api/config.js and the README.
+ARG VITE_API_URL=""
+ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build
 
 # ---- Stage 2: serve the built static files with nginx ----
 FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html
+COPY --from=build /app/static /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

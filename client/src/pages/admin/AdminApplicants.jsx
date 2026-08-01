@@ -5,7 +5,7 @@ import { api } from '../../api/client.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import StatusBadge from '../../components/StatusBadge.jsx';
 
-// Admin view of every student who applied to a single job posting, with
+// Admin view of every applicant who applied to a single job posting, with
 // per-applicant actions: download résumé, send interview invite, send rejection.
 //
 // "Send Interview Invitation" and "Send Rejection" are deliberately styled

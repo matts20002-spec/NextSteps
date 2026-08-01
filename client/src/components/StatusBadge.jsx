@@ -1,10 +1,10 @@
 import { Clock, CheckCircle2, XCircle } from 'lucide-react';
 
 // The app's signature visual element -- a colored pill shown everywhere an
-// application status appears (student and admin views alike), so status is
-// always instantly recognizable regardless of context. The three statuses
-// (submitted / interview / rejected) are the only ones this app supports --
-// see server/sql/schema.sql for why.
+// application status appears (applicant and admin views alike), so status
+// is always instantly recognizable regardless of context. The three
+// statuses (submitted / interview / rejected) are the only ones this app
+// supports -- see server/sql/schema.sql for why.
 const STATUS_ICONS = {
   submitted: Clock,
   interview: CheckCircle2,

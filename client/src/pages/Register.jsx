@@ -5,8 +5,9 @@ import { api } from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Illustration from '../components/Illustration.jsx';
 
-// Student self-registration. No email verification step -- the account is
-// active immediately (see README for why this is intentional for the course).
+// Applicant self-registration. No email verification step -- the account
+// is active immediately; this was cut from MVP scope to get hiring started
+// faster (see README).
 export default function Register() {
   const { login } = useAuth();
   const navigate = useNavigate();

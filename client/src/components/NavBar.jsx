@@ -15,7 +15,10 @@ export default function NavBar() {
     <nav className="navbar">
       <Link to="/" className="navbar-brand">
         <Briefcase size={20} />
-        Job Application Portal
+        <span className="navbar-brand-text">
+          NextStep
+          <span className="navbar-tagline">Your next step starts here</span>
+        </span>
       </Link>
       <div className="navbar-links">
         <Link to="/">

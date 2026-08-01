@@ -1,4 +1,4 @@
-/* Design system for the Job Application Portal.
+/* Design system for NextStep.
    Professional / corporate tone: understated, trustworthy -- think "a
    well-designed internal HR tool," not a consumer app. No component
    library; everything here is plain CSS using custom properties so the
@@ -102,6 +102,19 @@ a {
   font-size: 1.05rem;
   color: white;
   text-decoration: none;
+}
+
+.navbar-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.navbar-tagline {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .navbar-links {

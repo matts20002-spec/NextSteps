@@ -1,7 +1,7 @@
 {
-  "name": "job-portal-client",
+  "name": "nextstep-client",
   "version": "1.0.0",
-  "description": "Frontend for the Student Job Application Portal (teaching app for AWS course)",
+  "description": "Frontend for NextStep's job application portal (MVP)",
   "private": true,
   "type": "module",
   "scripts": {
