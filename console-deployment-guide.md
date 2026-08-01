@@ -1,4 +1,4 @@
- # NextStep Production Deployment Guide (AWS Console)
+# NextStep Production Deployment Guide (AWS Console)
 
 A complete, ordered walkthrough for deploying NextStep to AWS from a clean
 account. Follow the sections in order, each one only depends on resources
@@ -234,22 +234,18 @@ separately in the next section.
 
 ### Applying the schema
 
-The application already knows how to apply `server/sql/schema.sql` and seed
-data automatically, the same way `docker-compose.yml` does for local
-development. Before deploying the ECS service in step 11, confirm this
-behavior actually runs against any database on backend startup, not just
-against the local Postgres container specifically, if it's currently wired
-to only run via Postgres's `docker-entrypoint-initdb.d` mechanism, that
-mechanism does not exist on RDS, and schema application needs to happen a
-different way (the application running the schema itself at startup, before
-starting the Express server, mirroring what `seedAdmin.js` already does
-idempotently).
+No manual step needed here. The backend applies `server/sql/schema.sql` and
+`server/sql/seed_jobs.sql` itself at startup, idempotently, before it starts
+accepting requests, this runs identically whether it's talking to the local
+Docker Postgres container or a real RDS instance, since it's the
+application doing it, not something depending on Postgres's
+`docker-entrypoint-initdb.d` mechanism (which only exists for locally-run
+Postgres containers and has no RDS equivalent).
 
-If that's already how it works, no separate manual step is needed here, the
-schema applies the first time the ECS service starts against this fresh
-database in step 11. If it isn't, that's worth fixing in the codebase before
-continuing, rather than working around it with a manual bastion or one-off
-task connection.
+The first time the ECS service starts against this fresh RDS database in
+step 11, the tables and seed jobs get created automatically as part of that
+startup. Nothing to run separately, and nothing to remember to do before
+moving on to step 6.
 
 ---
 
@@ -263,6 +259,29 @@ task connection.
 4. Default encryption: enable, SSE-KMS, AWS-managed key (`aws/s3`) is fine
    for now
 5. Create
+6. **Required: Permissions tab > Cross-origin resource sharing (CORS) >
+   Edit.** The frontend uploads résumés directly to this bucket from the
+   browser using a presigned URL, so without CORS configured, the upload
+   fails with a browser CORS error, this step is easy to miss since the
+   bucket otherwise appears to work fine (downloads, console access) without
+   it, the failure only shows up when a real browser upload is attempted.
+   Add:
+   ```json
+   [
+     {
+       "AllowedHeaders": ["*"],
+       "AllowedMethods": ["PUT", "GET"],
+       "AllowedOrigins": ["https://<cloudfront-domain>"],
+       "ExposeHeaders": ["ETag"],
+       "MaxAgeSeconds": 3000
+     }
+   ]
+   ```
+   The CloudFront domain isn't known yet at this point in the guide (it's
+   created in step 14), come back and fill in the real value once it exists,
+   or set `AllowedOrigins` to `["*"]` temporarily to unblock testing and
+   tighten it to the real domain once known, don't leave it as `"*"`
+   permanently
 
 ### Frontend bucket
 
@@ -285,11 +304,25 @@ definition, and the frontend upload/CloudFront steps.
 3. Domain: add the DKIM CNAME records shown to your DNS provider, wait for
    verification (up to 72 hours, usually faster). Email address: click the
    verification link sent to that address
-4. Note the verified sender address or domain
+4. Note the verified sender address or domain, this is `SES_SENDER_EMAIL`
 5. SES Console > Account dashboard: check sending status. If still in
-   sandbox mode, only verified recipient addresses can receive mail, request
-   production access here if this deployment needs to email real,
-   unverified candidate addresses (approval typically takes a few hours to
+   sandbox mode (the default for a new account), **two separate things are
+   restricted**, not just one:
+   - Only verified identities can be used as a sender
+   - Only verified identities can **receive** mail at all, sandbox mode
+     rejects sending to any unverified recipient, regardless of who the
+     sender is
+
+   This means testing the actual interview-invite / rejection email flow
+   end to end requires **verifying a second identity**, a real inbox you
+   have access to, register a test candidate account using that same
+   verified address, and admin-sent emails to it will actually arrive. This
+   isn't a separate configuration step, it's the same "Create identity" flow
+   above, run a second time for a different email address
+
+   Request production access here (Account dashboard) if this deployment
+   needs to email real, unverified candidate addresses without each one
+   being manually verified first (approval typically takes a few hours to
    two business days)
 
 ---
@@ -581,19 +614,30 @@ Any time static content changes after the first deploy:
 
 ---
 
-## 15. KMS (encryption notes)
+## 15. KMS (optional: replacing the default encryption keys)
 
-No separate action required if default encryption was left enabled on both
-S3 buckets (step 6) and RDS storage encryption was left enabled at creation
-(default, confirm under the database's Configuration tab). To use a
-dedicated customer-managed key instead of the AWS-managed defaults:
+**Nothing to do here by default, encryption has already been happening the
+whole time.** S3 got SSE-KMS enabled with the AWS-managed default key
+(`aws/s3`) back in step 6, and RDS storage encryption was left on at
+creation in step 5. This section isn't a required step in the encryption
+path, it's placed here only because it's the natural point to mention the
+optional next level: swapping those AWS-managed default keys for a
+dedicated customer-managed key, which gives more control (key rotation
+policy, more granular access permissions, ability to revoke) than the
+defaults do.
+
+To do that:
 
 1. KMS Console > Create key > Symmetric, Encrypt and decrypt
 2. Alias: `nextstep-key`
 3. Key administrators/usage permissions: include the ECS task role and any
    IAM users/roles needing direct access
 4. Reference this key's ARN when configuring encryption on RDS and the S3
-   buckets instead of the AWS-managed defaults
+   buckets instead of the AWS-managed defaults, this means going back and
+   changing the encryption key setting on those resources, since it can't be
+   changed on RDS after creation without a snapshot/restore, this is really
+   a "decide before step 5" choice if you want a customer-managed key from
+   the start, rather than something to bolt on after the fact
 
 ---
 
