@@ -1,314 +1,176 @@
-# Student Job Application Portal
+# NextStep
 
-A small, deliberately simple full-stack app used as a **teaching tool** in an
-AWS cloud computing course. Students with little or no cloud background
-build/deploy this app to learn how a typical web app maps onto AWS managed
-services: CloudFront, S3, an Application Load Balancer, ECS Fargate, RDS,
-SES, Secrets Manager, and KMS.
+## Overview
 
-The code favors **clarity over cleverness** on purpose — plain SQL instead
-of an ORM, a hand-rolled JWT auth layer instead of Cognito, hardcoded email
-templates instead of a template engine. Students are expected to read this
-code, not just run it.
+NextStep is hiring heavily over the next few months and decided to build
+its own job application portal instead of continuing to rely on external
+job boards, mainly to cut cost and keep direct control over the hiring
+pipeline and applicant data.
 
-## Project overview
+This is the first version. It's a deliberate MVP: things like email
+verification, password reset, and a full admin-role system were left out
+to ship fast and start hiring sooner, not because nobody thought of them.
+Candidates register, browse job postings, and apply with a resume upload.
+A single built-in admin account manages postings and moves applicants
+forward.
 
-Students can browse job postings, register an account, apply to a job with
-a résumé upload, and track their application status. A single admin account
-manages job postings, reviews applicants, downloads résumés, and moves an
-applicant forward (interview) or rejects them — both of which trigger an
-email via SES.
+## How it works
 
-Application status is intentionally limited to three states, in this fixed
-order:
+Candidates register an account, browse job postings, and apply to a job
+with a resume upload. Each application has one of three statuses, in this
+fixed order: `submitted`, `interview`, `rejected`. `submitted` is set
+automatically when a candidate applies. `interview` and `rejected` change
+only as a side effect of the admin clicking a "send email" action on an
+applicant, which sends the email via SES and updates the status at the same
+time. There's no separate status dropdown.
 
-```
-Submitted → Interview → Rejected
-```
+There is one built-in admin account, created from `ADMIN_EMAIL` /
+`ADMIN_PASSWORD` (see the env var tables below). The admin logs in at the
+same login page as candidates and is routed to `/admin` to manage job
+postings and review applicants.
 
-`Submitted` is set automatically when a student applies. `Interview` and
-`Rejected` are set **only** as a side effect of the admin clicking the
-matching "send email" button — there's no separate status dropdown. This is
-a simplification for teaching purposes; a real ATS would have more states
-(e.g. "Under Review", "Offer", "Accepted") and a more flexible workflow.
-
-## Architecture summary
-
-This repo contains only the **application code and Dockerfile** — no AWS
-infrastructure-as-code. In the course, students deploy it themselves onto:
+## Architecture (production)
 
 ```
-Browser
-  │
-  ▼
-CloudFront (CDN)
-  │
-  ├──► S3 (static React build: HTML/JS/CSS)
-  │
-  └──► Application Load Balancer
-          │
-          ▼
-       ECS Fargate (this backend, containerized via server/Dockerfile)
-          │
-          ├──► RDS PostgreSQL (users, jobs, applications)
-          ├──► S3 (résumé file storage)
-          ├──► SES (interview / rejection emails)
-          ├──► Secrets Manager (DATABASE_URL, JWT_SECRET, etc. injected as env vars)
-          └──► KMS (encrypts the above secrets + RDS storage at rest)
+User Browser -> CloudFront -> S3 (static frontend)
+                    |
+            API Requests (HTTPS)
+                    |
+        Application Load Balancer -> ECS Fargate (backend)
+                    |
+    +------+------+---------+---------+
+    RDS    S3    Secrets    SES       KMS
+ (Postgres)(resumes) Manager (email) (encryption)
 ```
 
-- **Frontend**: a Vite-built React app. It's built to static files
-  (`client/dist`) and uploaded to S3, then served through CloudFront —
-  it does **not** run as a container in production.
-- **Backend**: an Express API, containerized with `server/Dockerfile`,
-  intended to run as an ECS Fargate task behind an ALB.
-- **Auth**: fully custom — `bcryptjs` for password hashing, `jsonwebtoken`
-  for stateless session tokens. No Cognito, no third-party auth provider.
-- **AWS credentials**: the app never handles AWS access keys directly. It
-  relies on the AWS SDK's default credential provider chain, which in
-  production means the ECS task's IAM role, and locally means your AWS CLI
-  profile / environment variables.
+- **CloudFront**: CDN in front of the S3 frontend bucket, and the entry
+  point for the whole app. Routes `/api/*` to the ALB, everything else to S3.
+- **S3 (static frontend)**: hosts the built React app (`client/static`).
+- **Application Load Balancer**: routes HTTPS API traffic to the ECS
+  service and terminates TLS.
+- **ECS Fargate (backend)**: runs the Express API as a container, one task
+  definition, no autoscaling needed at current hiring volume.
+- **RDS (Postgres)**: stores users, jobs, and applications.
+- **S3 (resumes)**: stores uploaded resume files, accessed by the backend
+  via IAM role, not public.
+- **Secrets Manager**: holds the database credentials (`DB_HOST`, `DB_USER`,
+  `DB_PASSWORD`) and other secrets injected into the ECS task as
+  environment variables.
+- **SES**: sends interview and rejection emails on behalf of the admin.
+- **KMS**: encrypts data at rest for RDS and S3 via their default
+  encryption settings.
 
-## Project layout
+## Local deployment
 
-```
-server/           Express + PostgreSQL backend (the API / ECS Fargate image)
-  src/
-    index.js       App entry point
-    db.js          Shared pg connection pool
-    routes/        auth.js, jobs.js, applications.js, admin.js
-    middleware/    auth.js (JWT verification)
-    utils/         s3.js (résumé upload/download), email.js (SES templates)
-  scripts/
-    seedAdmin.js   Creates/updates the one built-in admin account from env vars (safe to re-run)
-  sql/
-    schema.sql     Table definitions -- auto-applied locally via docker-compose.yml, see below
-    seed_jobs.sql  A few sample job postings for local dev -- also auto-applied locally
-  Dockerfile        Backend image for ECS Fargate
+Two steps:
 
-client/           React (Vite) frontend, built to static files for S3
-  src/
-    pages/          Student pages (job list, job detail, login, register, my applications)
-    pages/admin/    Admin pages (job CRUD, applicant list + actions)
-    api/client.js   Small fetch() wrapper
-    auth/           React context holding the logged-in user + JWT
-  Dockerfile        OPTIONAL — builds + previews the static bundle in nginx
-
-docker-compose.yml  Local Postgres + backend, for development only
-```
-
-## Local setup
-
-### Prerequisites
-
-- Node.js 20+
-- Docker (for running Postgres locally, and optionally the backend itself)
-- An AWS account is **not** required just to run the app locally, *except*
-  for the résumé-upload and email-sending features, which call real S3/SES
-  APIs. To exercise those locally you'll need AWS credentials on your
-  machine (e.g. `aws configure`, or `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
-  environment variables) with access to a real S3 bucket and a verified SES
-  identity — see the SES sandbox notes below.
-
-### Option A: full stack via Docker Compose (fastest)
+1. Start the database and backend:
 
 ```bash
-cp .env.example .env   # project root -- fill in the values, see below
+cp .env.example .env
 docker compose up --build
 ```
 
-That's it. On a **fresh** setup this single command:
+This starts Postgres, the backend, and the frontend (nginx) as three
+Compose services. The backend applies its own schema and seed data, and
+creates the admin account from `ADMIN_EMAIL` / `ADMIN_PASSWORD`, on every
+startup, against whatever PostgreSQL database it's pointed at -- local or
+RDS -- so there's no separate manual schema or admin-seeding step, on a
+fresh volume or a fresh RDS instance alike (see `server/src/schema.js` and
+`server/src/seedAdmin.js`).
 
-1. Starts Postgres and automatically runs `server/sql/schema.sql` and
-   `server/sql/seed_jobs.sql` against it (Postgres's official image runs
-   any `.sql` file mounted into `/docker-entrypoint-initdb.d/`, but only
-   the first time it initializes an empty data directory — see the
-   comments in `docker-compose.yml`).
-2. Starts the backend, which seeds the admin account from `ADMIN_EMAIL` /
-   `ADMIN_PASSWORD` every time it boots (safe to repeat — see
-   `server/scripts/seedAdmin.js`), then starts the API on port 3000.
+2. The frontend container is built and started by the same command, via
+   the `frontend` service in `docker-compose.yml`. It's an nginx container
+   that serves the built React app and reverse-proxies `/api/*` to the
+   `backend` service over the internal Docker network (see
+   `client/nginx.conf`), so the app works with zero extra configuration.
 
-You'll have a couple of sample job postings and a working admin login
-without touching `psql` at all.
+Open `http://localhost`. Register a candidate account, or log in as the
+admin with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from your `.env`.
 
-> **Upgrading from an older checkout?** If you already ran `docker compose
-> up` before this seeding setup existed, Postgres's data directory is no
-> longer "fresh," so step 1 above won't retroactively fire. Run
-> `docker compose down -v` (this deletes the local dev database volume
-> only — nothing in AWS) and then `docker compose up --build` again.
+### Env vars
 
-The root `.env` (copied from `.env.example`) is read directly by
-`docker compose` to fill in `${AWS_REGION}`, `${ADMIN_EMAIL}`, etc. in
-`docker-compose.yml`. This is a **different file** from `server/.env`
-(below) — Docker Compose itself only ever reads the one at the project
-root.
+The app connects to Postgres with discrete params rather than a single
+`DATABASE_URL`, since in production the RDS-managed Secrets Manager secret
+exposes host/user/password as separate fields, not a pre-built URL, and the
+database name is a separate plain value outside that secret entirely (see
+`server/src/db.js`).
 
-### Option B: Postgres in Docker, backend/frontend run natively
+| Variable | Purpose | Example |
+|---|---|---|
+| `DB_HOST` | Postgres host | `db` |
+| `DB_PORT` | Postgres port | `5432` |
+| `DB_USER` | Postgres user | `postgres` |
+| `DB_PASSWORD` | Postgres password | `postgres` |
+| `DB_NAME` | Postgres database name | `job_portal` |
+| `DB_SSL` | Enables TLS on the database connection | not needed locally, leave unset (`false`) |
+| `JWT_SECRET` | Signs login JWTs | a long random string |
+| `S3_BUCKET_NAME` | S3 bucket for resume uploads | `nextstep-resumes` |
+| `AWS_REGION` | Region for the S3 bucket and SES identity | `us-east-1` |
+| `SES_SENDER_EMAIL` | Verified SES "from" address for interview/rejection emails | `you@example.com` |
+| `ADMIN_EMAIL` | Login identifier for the built-in admin account | `admin@example.com` |
+| `ADMIN_PASSWORD` | Password for the built-in admin account | a strong password |
 
-Useful when you're actively editing backend code and want faster restarts
-than rebuilding a container each time.
+`VITE_API_URL` is not needed locally. The nginx proxy in the `frontend`
+container handles routing `/api/*` to the backend, so the frontend calls
+relative paths.
 
-```bash
-docker compose up db
-```
+## Production deployment
 
-This still auto-applies the schema + sample jobs as described above. Then:
+This follows the architecture diagram above. Steps assume you're already
+comfortable with the AWS console or CLI.
 
-```bash
-cd server
-cp .env.example .env   # fill in the values, see table below
-npm install
-npm run seed:admin      # creates the admin account (run once)
-npm run dev              # starts the API on http://localhost:3000
-```
-
-`server/.env.example` fields:
-
-| Variable            | Purpose                                                              |
-|---------------------|------------------------------------------------------------------------|
-| `DATABASE_URL`      | Postgres connection string (default matches the `docker compose up db` above) |
-| `AWS_REGION`        | Region your S3 bucket / SES identity live in                          |
-| `S3_BUCKET_NAME`    | S3 bucket for résumé uploads                                          |
-| `SES_SENDER_EMAIL`  | Verified SES identity to send "from" (see relationship to `ADMIN_EMAIL` below) |
-| `JWT_SECRET`        | Any long random string, used to sign login tokens                     |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Used by `npm run seed:admin` to create the admin account  |
-| `PORT`              | Port the API listens on (defaults to 3000)                             |
-
-**How `ADMIN_EMAIL`, `SES_SENDER_EMAIL`, and student emails relate** — these
-are three logically separate settings that are easy to conflate:
-
-- `ADMIN_EMAIL` is just the **login identifier** for the one built-in admin
-  account. It doesn't have to be a real inbox.
-- `SES_SENDER_EMAIL` is the **"From" address** on every interview/rejection
-  email SES sends. It must be a verified SES identity. It's common (and
-  fine) to set this to the same address as `ADMIN_EMAIL` for simplicity,
-  but nothing in the code requires that.
-- Each **student's registered email** (the one they sign up with) is the
-  **"To" address** when the admin sends them an email. While SES is in
-  sandbox mode, that address must *also* be a verified SES identity, or
-  sending will fail — see the sandbox notes below for what this means in
-  practice.
-
-Then, in a separate terminal, run the frontend:
-
-```bash
-cd client
-npm install
-npm run dev
-```
-
-Starts the Vite dev server (usually `http://localhost:5173`). It proxies
-`/api/*` requests to `http://localhost:3000` (see `client/vite.config.js`),
-so the two dev servers work together without any CORS configuration.
-
-Open the printed Vite URL, register a student account, and browse jobs. Log
-in as the admin using `ADMIN_EMAIL` / `ADMIN_PASSWORD` to reach `/admin`.
-
-## Building and running the Docker image locally
-
-**Backend:**
-
-```bash
-cd server
-docker build -t job-portal-backend .
-docker run -p 3000:3000 --env-file .env job-portal-backend
-```
-
-Or use the full local stack (Postgres + backend together) as in Option A
-above:
-
-```bash
-docker compose up --build
-```
-
-**Frontend** (optional — mainly to sanity-check the production build):
+- **RDS PostgreSQL**: create an instance. No manual schema or admin-seeding
+  step is needed -- the backend applies `server/sql/schema.sql` (and seed
+  data) and creates the admin account from `ADMIN_EMAIL` / `ADMIN_PASSWORD`
+  itself on startup, against whatever database it's pointed at, so a fresh
+  RDS instance gets its tables and admin login created automatically on
+  the very first boot (see `server/src/schema.js` and
+  `server/src/seedAdmin.js`). Put the host, username, and password
+  into Secrets Manager as `DB_HOST`, `DB_USER`, and `DB_PASSWORD` (the
+  discrete fields RDS-managed secrets actually expose, rather than a
+  pre-built connection string). `DB_NAME` isn't part of that secret, set it
+  as a plain task-definition env var.
+- **S3 (resumes)**: create a private bucket for resume uploads. Attach an
+  IAM policy to the ECS task role granting it read/write access to that
+  bucket only.
+- **S3 + CloudFront (frontend)**: create a bucket for the static frontend
+  build and a CloudFront distribution in front of it. Configure CloudFront
+  to route `/api/*` to the ALB and everything else to the S3 origin.
+- **SES**: verify a sending identity for `SES_SENDER_EMAIL`. New AWS
+  accounts start in SES sandbox mode, which also requires every recipient
+  address to be verified. You'll likely need to request SES production
+  access before candidates outside your verified list can receive email.
+- **Secrets Manager**: store `DB_HOST`, `DB_USER`, and `DB_PASSWORD` at
+  minimum. Other values (`JWT_SECRET`, `ADMIN_PASSWORD`, etc.) can live
+  here too instead of as plain task-definition env vars if you want them
+  encrypted at rest.
+- **ECS Fargate**: task definition needs these env vars: `DB_HOST`,
+  `DB_USER`, `DB_PASSWORD` (from Secrets Manager), `DB_PORT`, `DB_NAME`,
+  `DB_SSL=true`, `JWT_SECRET`, `S3_BUCKET_NAME`, `AWS_REGION`,
+  `SES_SENDER_EMAIL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`. Build the image from
+  `server/Dockerfile`.
+- **ALB**: routes HTTPS traffic to the ECS service's target group.
+  CloudFront points at this ALB for `/api/*`.
+- **Frontend build**: build the frontend with `VITE_API_URL` set to the
+  ALB's or a custom domain's HTTPS address, for example:
 
 ```bash
 cd client
-docker build -t job-portal-frontend .
-docker run -p 8080:80 job-portal-frontend
+VITE_API_URL=https://api.yourdomain.com npm run build
 ```
 
-Then visit `http://localhost:8080`. Remember: this container is a local
-convenience only. In the real deployment, `npm run build` output
-(`client/dist`) is uploaded directly to S3 and served via CloudFront — the
-frontend is never actually run as a container in production.
+  Upload the `client/static` output to the frontend S3 bucket.
 
-## Design system & illustrations
+  The backend URL can also be changed after deployment without a rebuild:
+  edit `config.js` at the root of the uploaded static content (it sits
+  alongside `index.html`) and set `API_URL` to the new address. This
+  overrides `VITE_API_URL` at runtime, useful if the backend address
+  changes later. See `client/src/api/config.js`.
 
-The UI follows a deliberately restrained "professional / corporate" visual
-style — think internal HR tool, not consumer app:
+- **KMS**: encryption at rest is applied via RDS's and S3's default
+  encryption settings, both backed by a KMS key. No separate KMS setup is
+  required beyond enabling default encryption on those resources.
 
-- **Colors, fonts, spacing**: all defined as CSS custom properties in
-  `client/src/styles.css` (deep blue `--color-primary`, muted teal
-  `--color-accent`, a 4/8/16/24/32/48px spacing scale). Headings use
-  **Sora**, body/UI text uses **Inter** (loaded via Google Fonts in
-  `client/index.html`).
-- **Status pills**: `StatusBadge` (`client/src/components/StatusBadge.jsx`)
-  is the app's one recurring visual element, shown identically in student
-  and admin views — slate for `submitted`, teal-green for `interview`, muted
-  red for `rejected`. Rejection is intentionally *not* styled as alarming or
-  destructive (no bright red), since sending a rejection email is a normal
-  business action, not a delete.
-- **Icons**: [`lucide-react`](https://lucide.dev) throughout, used
-  purposefully (status, upload/download, edit/delete, empty states) rather
-  than as decoration.
-
-### Illustrations (optional, dev-only)
-
-Four illustrations (job-browse hero, two empty states, login/register) are
-generated once via the OpenAI Images API and committed as static assets —
-they are **not** generated at runtime, so the deployed app never needs an
-OpenAI API key. If they haven't been generated yet, `Illustration.jsx`
-(`client/src/components/Illustration.jsx`) automatically falls back to a
-plain `lucide-react` icon in the same spot, so the app looks intentional
-either way — nothing is broken or blocked by skipping this step.
-
-To generate (or regenerate) them:
-
-```bash
-cd client
-OPENAI_API_KEY=sk-...  npm run generate:illustrations
-```
-
-This calls `client/scripts/generate-illustrations.js`, which writes PNGs
-into `client/src/assets/illustrations/` (filenames and the exact prompt
-used for each are documented in that folder's `README.md`, and repeated as
-`// TODO` comments at each usage site in the page components). Only set
-`OPENAI_API_KEY` in your shell for this one command — never commit it, and
-it's not read anywhere else in the app. If you already have the generated
-files in the repo, you can skip this entirely.
-
-## SES sandbox notes (important for the course)
-
-By default, a new AWS account's SES is in **sandbox mode**, which restricts
-you to sending email only:
-- **from** a verified identity (`SES_SENDER_EMAIL` must be verified in the
-  SES console), **and**
-- **to** verified identities as well — SES will reject email to any address
-  that hasn't also been verified.
-
-Since each student deploys this app into their own AWS account and nobody
-is requesting SES production access for a course exercise, the practical
-workflow is:
-
-1. Verify your own email address (or a couple of addresses) as SES
-   identities in the AWS Console (SES → Verified identities).
-2. Set `SES_SENDER_EMAIL` to one of those verified addresses.
-3. When registering student accounts to test the app, use those same
-   verified email addresses. Since there's no email verification step on
-   registration, you can register as many "students" as you like, as long
-   as each one's email is a verified SES identity — otherwise the
-   admin's "Send Interview Invitation" / "Send Rejection" buttons will fail
-   with an SES rejection.
-
-This is a sandbox-mode limitation, not a bug in the app.
-
-## Notes on the status flow
-
-The `Submitted → Interview → Rejected` flow is intentionally minimal. A real
-hiring pipeline would likely need more states (e.g. "Under Review",
-"Offer Extended", "Accepted", "Withdrawn") and a way to move backward or
-sideways, not just forward through email actions. That complexity is left
-out on purpose so the course can focus on the AWS deployment concepts
-rather than product/business logic.
+This production path hasn't been walked end-to-end yet in this project.
+Validate it before relying on it for real hiring.

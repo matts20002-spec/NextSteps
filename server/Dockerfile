@@ -1,5 +1,5 @@
 # Dockerfile for the backend API -- this is the image that runs as an
-# ECS Fargate task in the course's target architecture.
+# ECS Fargate task in the target production architecture.
 #
 # The frontend is NOT built or run from this image: in production it's a
 # separate static build uploaded to S3 and served through CloudFront (see

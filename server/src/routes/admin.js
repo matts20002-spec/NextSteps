@@ -3,8 +3,9 @@
 //
 // Status changes are deliberately NOT a free-form "set status" endpoint --
 // the only two application_status can move to are triggered as a
-// side-effect of sending an email (see the course brief: "Interview" and
-// "Rejected" are set only by clicking the matching email-send button).
+// side-effect of sending an email ("Interview" and "Rejected" are set only
+// by clicking the matching email-send button). A richer status workflow is
+// MVP-scope out for now.
 const express = require('express');
 const { pool } = require('../db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
@@ -17,7 +18,7 @@ const router = express.Router();
 router.use(requireAuth, requireAdmin);
 
 // GET /api/admin/jobs/:jobId/applicants -- everyone who applied to a job,
-// with enough student info for the admin to review and take action.
+// with enough applicant info for the admin to review and take action.
 router.get('/jobs/:jobId/applicants', asyncHandler(async (req, res) => {
   const result = await pool.query(
     `SELECT
@@ -50,7 +51,7 @@ router.get('/applications/:id/resume', asyncHandler(async (req, res) => {
   res.json({ url });
 }));
 
-// Shared helper: looks up the student/job info an email template needs, and
+// Shared helper: looks up the applicant/job info an email template needs, and
 // exists so the interview + rejection routes below don't repeat this join.
 async function getApplicationEmailContext(applicationId) {
   const result = await pool.query(
@@ -69,10 +70,10 @@ async function getApplicationEmailContext(applicationId) {
 }
 
 // POST /api/admin/applications/:id/send-interview
-// Sends the hardcoded interview invitation email, then marks the
-// application's status as 'interview'. Email is sent first: if SES fails,
-// we don't want the status to silently change without the student actually
-// being notified.
+// Sends the interview invitation email, then marks the application's
+// status as 'interview'. Email is sent first: if SES fails, we don't want
+// the status to silently change without the applicant actually being
+// notified.
 router.post('/applications/:id/send-interview', asyncHandler(async (req, res) => {
   const context = await getApplicationEmailContext(req.params.id);
   if (!context) {
@@ -94,8 +95,8 @@ router.post('/applications/:id/send-interview', asyncHandler(async (req, res) =>
 }));
 
 // POST /api/admin/applications/:id/send-rejection
-// Sends the hardcoded rejection email, then marks the application's status
-// as 'rejected'.
+// Sends the rejection email, then marks the application's status as
+// 'rejected'.
 router.post('/applications/:id/send-rejection', asyncHandler(async (req, res) => {
   const context = await getApplicationEmailContext(req.params.id);
   if (!context) {

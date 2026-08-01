@@ -2,8 +2,8 @@
 //
 // We never proxy file bytes through our own server for the download link --
 // we generate a short-lived "presigned URL" that lets the browser talk to
-// S3 directly. This is a common AWS pattern worth teaching: it keeps large
-// file transfers off your application server entirely.
+// S3 directly. This is a common AWS pattern: it keeps large file transfers
+// off your application server entirely.
 const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const crypto = require('crypto');
@@ -17,23 +17,30 @@ const s3 = new S3Client({ region: process.env.AWS_REGION });
 const BUCKET = process.env.S3_BUCKET_NAME;
 
 /**
- * Uploads a résumé buffer to S3 under a unique key and returns that key.
- * The key (not the file itself) is what we store in the `applications` table.
+ * Generates a temporary S3 PUT URL the browser can upload a résumé to
+ * directly, without the file ever passing through our own server (or
+ * CloudFront's API origin, which has its own limits on proxied POST body
+ * size). Returns the key the caller should hang onto and store on the
+ * application record once the upload succeeds.
+ *
+ * When contentType is provided it's baked into the presigned command, so
+ * the object is stored in S3 with that Content-Type (useful when it's
+ * later downloaded) -- callers should still send the same Content-Type
+ * header on the actual PUT so the stored metadata matches what the file
+ * actually is.
  */
-async function uploadResume(userId, originalFilename, buffer, mimeType) {
+async function getResumeUploadUrl(userId, originalFilename, contentType, expiresInSeconds = 300) {
   const uniqueSuffix = crypto.randomUUID();
   const key = `resumes/${userId}/${uniqueSuffix}-${originalFilename}`;
 
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: BUCKET,
-      Key: key,
-      Body: buffer,
-      ContentType: mimeType,
-    })
-  );
+  const command = new PutObjectCommand({
+    Bucket: BUCKET,
+    Key: key,
+    ...(contentType ? { ContentType: contentType } : {}),
+  });
 
-  return key;
+  const url = await getSignedUrl(s3, command, { expiresIn: expiresInSeconds });
+  return { url, key };
 }
 
 /**
@@ -45,4 +52,4 @@ async function getResumeDownloadUrl(key, expiresInSeconds = 300) {
   return getSignedUrl(s3, command, { expiresIn: expiresInSeconds });
 }
 
-module.exports = { uploadResume, getResumeDownloadUrl };
+module.exports = { getResumeUploadUrl, getResumeDownloadUrl };

@@ -1,8 +1,8 @@
-// Sends the two hardcoded emails (interview invite / rejection) via AWS SES.
+// Sends the two interview/rejection emails via AWS SES.
 //
-// Templates are intentionally hardcoded strings with simple {placeholder}
-// substitution -- this app does not include a template editor, since that's
-// out of scope for the course.
+// Templates are plain strings with simple {placeholder} substitution -- a
+// template editor was cut from the MVP scope; revisit if the hiring team
+// needs to customize this copy themselves post-launch.
 const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
 
 const ses = new SESClient({ region: process.env.AWS_REGION });
@@ -12,7 +12,7 @@ function fillTemplate(template, values) {
   return template.replace(/\{(\w+)\}/g, (_match, key) => values[key] ?? '');
 }
 
-const INTERVIEW_SUBJECT = 'Interview Invitation — {jobTitle}';
+const INTERVIEW_SUBJECT = 'Interview Invitation for {jobTitle}';
 const INTERVIEW_BODY = `Hi {studentName},
 
 Thank you for applying for the {jobTitle} position. We were impressed with your
@@ -23,7 +23,7 @@ Our team will be in touch shortly to schedule a time.
 Best regards,
 The Hiring Team`;
 
-const REJECTION_SUBJECT = 'Update on your application — {jobTitle}';
+const REJECTION_SUBJECT = 'Update on your application for {jobTitle}';
 const REJECTION_BODY = `Hi {studentName},
 
 Thank you for applying for the {jobTitle} position and for the time you invested
@@ -41,8 +41,8 @@ The Hiring Team`;
  *
  * NOTE (SES sandbox): while your SES account is in sandbox mode, both the
  * sender (SES_SENDER_EMAIL) AND every recipient must be verified SES
- * identities. See the README for how students should verify their own
- * email and use it as both their student account email and test recipient.
+ * identities. See the README for how to verify a test address and use it
+ * as both your applicant account email and test recipient.
  */
 async function sendTemplatedEmail({ toEmail, subjectTemplate, bodyTemplate, studentName, jobTitle }) {
   const values = { studentName, jobTitle };

@@ -1,6 +1,6 @@
-// Registration and login for students. There is no email verification step
-// and no password reset flow -- both are explicitly out of scope for this
-// teaching app.
+// Registration and login for applicants. There is no email verification
+// step and no password reset flow -- both are MVP scope cuts, deferred
+// until after initial launch so we could get hiring started faster.
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -20,9 +20,9 @@ function signToken(user) {
 }
 
 // POST /api/auth/register
-// Creates a brand-new student account. Accounts are active immediately --
-// there is no email verification step and no way for a student to sign up
-// as an admin (the admin account only comes from the seed script).
+// Creates a brand-new applicant account. Accounts are active immediately --
+// there is no email verification step and no way for an applicant to sign
+// up as an admin (the admin account only comes from the seed script).
 router.post('/register', async (req, res) => {
   const { username, email, password } = req.body;
 

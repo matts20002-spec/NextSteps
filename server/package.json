@@ -1,12 +1,13 @@
 {
-  "name": "job-portal-server",
+  "name": "nextstep-server",
   "version": "1.0.0",
-  "description": "Backend API for the Student Job Application Portal (teaching app for AWS course)",
+  "description": "Backend API for NextStep's job application portal (MVP)",
   "main": "src/index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
+    "apply:schema": "node scripts/applySchema.js",
     "seed:admin": "node scripts/seedAdmin.js"
   },
   "dependencies": {
@@ -18,7 +19,6 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
-    "multer": "^2.0.1",
     "pg": "^8.12.0"
   }
 }

@@ -1,8 +1,8 @@
 // Job posting endpoints.
 //
-// Listing/viewing jobs is public (no login required) so students can browse
-// openings before creating an account. Creating/editing/deleting a job is
-// restricted to the admin account.
+// Listing/viewing jobs is public (no login required) so applicants can
+// browse openings before creating an account. Creating/editing/deleting a
+// job is restricted to the admin account.
 const express = require('express');
 const { pool } = require('../db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');

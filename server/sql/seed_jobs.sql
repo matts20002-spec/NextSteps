@@ -1,8 +1,12 @@
--- Optional sample job postings for local development, so a fresh
--- `docker compose up` gives you something to click through immediately
--- instead of an empty job board. This is NOT run against a real AWS/RDS
--- deployment -- it's only picked up locally via Postgres's
--- /docker-entrypoint-initdb.d mechanism (see docker-compose.yml).
+-- Sample job postings, so a fresh database gives you something to click
+-- through immediately instead of an empty job board. The backend applies
+-- this itself on startup, but only when the jobs table is empty (see
+-- server/src/schema.js), so it runs once against any target -- local or a
+-- fresh RDS deployment -- without inserting duplicate rows on later
+-- restarts. It's also picked up locally via Postgres's
+-- /docker-entrypoint-initdb.d mechanism (see docker-compose.yml), which is
+-- a harmless no-op alongside the backend's own application since the jobs
+-- table won't be empty by the time the backend runs its check.
 INSERT INTO jobs (title, description, location) VALUES
   (
     'Backend Engineering Intern',
