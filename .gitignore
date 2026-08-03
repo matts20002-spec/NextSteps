@@ -1,15 +1,15 @@
-# Dependencies (installed separately in server/ and client/)
+# Dependencies (installed separately in Backend/ and Frontend/)
 node_modules/
 
 # Environment variables -- never commit real secrets/credentials.
 .env
 .env.local
 .env.*.local
-server/.env
-client/.env
+Backend/.env
+Frontend/.env
 
 # Build output
-server/dist/
+Backend/dist/
 
 # Logs
 *.log

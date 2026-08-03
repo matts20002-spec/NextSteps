@@ -6,15 +6,15 @@
 #
 # Usage: docker compose up --build
 # That's it -- the backend applies its own schema and seed data on startup
-# (see server/src/schema.js), so tables and sample jobs exist whether or
+# (see Backend/src/schema.js), so tables and sample jobs exist whether or
 # not this is a fresh volume. Locally, Postgres also auto-runs
-# server/sql/schema.sql and server/sql/seed_jobs.sql on a fresh volume via
+# Backend/sql/schema.sql and Backend/sql/seed_jobs.sql on a fresh volume via
 # the `db` volumes below; that's a harmless no-op alongside the backend's
 # own application, kept only because it lets a bare `docker compose up db`
 # be useful on its own. The backend also seeds the admin account on
 # startup, and nginx (in the `frontend` service) serves the built React app
 # and reverse-proxies /api/* to the backend container, so the frontend can
-# call relative paths with zero extra configuration (see client/nginx.conf).
+# call relative paths with zero extra configuration (see Frontend/nginx.conf).
 #
 # In production the frontend is NOT run as a container: it's built with
 # VITE_API_URL set to the ALB/domain's HTTPS address and the static output
@@ -35,8 +35,8 @@ services:
       # filename order, but ONLY the very first time a container starts
       # against an empty data directory. That's what gives a fresh
       # `docker compose up` a ready-to-use schema + sample jobs for free.
-      - ./server/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ./server/sql/seed_jobs.sql:/docker-entrypoint-initdb.d/02-seed-jobs.sql:ro
+      - ./Backend/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./Backend/sql/seed_jobs.sql:/docker-entrypoint-initdb.d/02-seed-jobs.sql:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres']
       interval: 5s
@@ -44,7 +44,7 @@ services:
       retries: 5
 
   backend:
-    build: ./server
+    build: ./Backend
     restart: unless-stopped
     ports:
       - '3000:3000'
@@ -66,18 +66,18 @@ services:
         condition: service_healthy
     # No command override -- the Dockerfile's CMD (`node src/index.js`) is
     # enough. index.js applies the schema and seeds the admin account
-    # itself before it starts listening (see server/src/schema.js and
-    # server/src/seedAdmin.js), so there's no external command chain to
+    # itself before it starts listening (see Backend/src/schema.js and
+    # Backend/src/seedAdmin.js), so there's no external command chain to
     # maintain here, and the same image behaves identically under ECS,
     # which runs that CMD directly with no opportunity for a chain like
     # this anyway.
 
   frontend:
     build:
-      context: ./client
+      context: ./Frontend
       # No VITE_API_URL build arg here on purpose -- leaving it unset makes
       # the app call relative '/api' paths, which nginx.conf forwards to
-      # the `backend` service below. See client/src/api/config.js.
+      # the `backend` service below. See Frontend/src/api/config.js.
     restart: unless-stopped
     ports:
       - '80:80'

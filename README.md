@@ -45,7 +45,7 @@ User Browser -> CloudFront -> S3 (static frontend)
 
 - **CloudFront**: CDN in front of the S3 frontend bucket, and the entry
   point for the whole app. Routes `/api/*` to the ALB, everything else to S3.
-- **S3 (static frontend)**: hosts the built React app (`client/static`).
+- **S3 (static frontend)**: hosts the built React app (`Frontend/static`).
 - **Application Load Balancer**: routes HTTPS API traffic to the ECS
   service and terminates TLS.
 - **ECS Fargate (backend)**: runs the Express API as a container, one task
@@ -76,14 +76,14 @@ Compose services. The backend applies its own schema and seed data, and
 creates the admin account from `ADMIN_EMAIL` / `ADMIN_PASSWORD`, on every
 startup, against whatever PostgreSQL database it's pointed at -- local or
 RDS -- so there's no separate manual schema or admin-seeding step, on a
-fresh volume or a fresh RDS instance alike (see `server/src/schema.js` and
-`server/src/seedAdmin.js`).
+fresh volume or a fresh RDS instance alike (see `Backend/src/schema.js` and
+`Backend/src/seedAdmin.js`).
 
 2. The frontend container is built and started by the same command, via
    the `frontend` service in `docker-compose.yml`. It's an nginx container
    that serves the built React app and reverse-proxies `/api/*` to the
    `backend` service over the internal Docker network (see
-   `client/nginx.conf`), so the app works with zero extra configuration.
+   `Frontend/nginx.conf`), so the app works with zero extra configuration.
 
 Open `http://localhost`. Register a candidate account, or log in as the
 admin with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from your `.env`.
@@ -94,7 +94,7 @@ The app connects to Postgres with discrete params rather than a single
 `DATABASE_URL`, since in production the RDS-managed Secrets Manager secret
 exposes host/user/password as separate fields, not a pre-built URL, and the
 database name is a separate plain value outside that secret entirely (see
-`server/src/db.js`).
+`Backend/src/db.js`).
 
 | Variable | Purpose | Example |
 |---|---|---|
@@ -121,12 +121,12 @@ This follows the architecture diagram above. Steps assume you're already
 comfortable with the AWS console or CLI.
 
 - **RDS PostgreSQL**: create an instance. No manual schema or admin-seeding
-  step is needed -- the backend applies `server/sql/schema.sql` (and seed
+  step is needed -- the backend applies `Backend/sql/schema.sql` (and seed
   data) and creates the admin account from `ADMIN_EMAIL` / `ADMIN_PASSWORD`
   itself on startup, against whatever database it's pointed at, so a fresh
   RDS instance gets its tables and admin login created automatically on
-  the very first boot (see `server/src/schema.js` and
-  `server/src/seedAdmin.js`). Put the host, username, and password
+  the very first boot (see `Backend/src/schema.js` and
+  `Backend/src/seedAdmin.js`). Put the host, username, and password
   into Secrets Manager as `DB_HOST`, `DB_USER`, and `DB_PASSWORD` (the
   discrete fields RDS-managed secrets actually expose, rather than a
   pre-built connection string). `DB_NAME` isn't part of that secret, set it
@@ -149,24 +149,24 @@ comfortable with the AWS console or CLI.
   `DB_USER`, `DB_PASSWORD` (from Secrets Manager), `DB_PORT`, `DB_NAME`,
   `DB_SSL=true`, `JWT_SECRET`, `S3_BUCKET_NAME`, `AWS_REGION`,
   `SES_SENDER_EMAIL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`. Build the image from
-  `server/Dockerfile`.
+  `Backend/Dockerfile`.
 - **ALB**: routes HTTPS traffic to the ECS service's target group.
   CloudFront points at this ALB for `/api/*`.
 - **Frontend build**: build the frontend with `VITE_API_URL` set to the
   ALB's or a custom domain's HTTPS address, for example:
 
 ```bash
-cd client
+cd Frontend
 VITE_API_URL=https://api.yourdomain.com npm run build
 ```
 
-  Upload the `client/static` output to the frontend S3 bucket.
+  Upload the `Frontend/static` output to the frontend S3 bucket.
 
   The backend URL can also be changed after deployment without a rebuild:
   edit `config.js` at the root of the uploaded static content (it sits
   alongside `index.html`) and set `API_URL` to the new address. This
   overrides `VITE_API_URL` at runtime, useful if the backend address
-  changes later. See `client/src/api/config.js`.
+  changes later. See `Frontend/src/api/config.js`.
 
 - **KMS**: encryption at rest is applied via RDS's and S3's default
   encryption settings, both backed by a KMS key. No separate KMS setup is

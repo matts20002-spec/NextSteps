@@ -161,7 +161,7 @@ time.
 2. Name: `nextstep-ecs-sg`, VPC: `nextstep-vpc`
 3. Inbound rules:
    - Type: Custom TCP, Port 3000 (or whatever port the backend container
-     actually listens on, confirm against `server/Dockerfile`'s `EXPOSE`
+     actually listens on, confirm against `Backend/Dockerfile`'s `EXPOSE`
      line), Source: **security group** `nextstep-alb-sg`
 4. Outbound rules: leave the default (all traffic allowed, this is what lets
    ECS tasks reach RDS, S3, SES, ECR, and Secrets Manager through the NAT
@@ -234,8 +234,8 @@ separately in the next section.
 
 ### Applying the schema
 
-No manual step needed here. The backend applies `server/sql/schema.sql` and
-`server/sql/seed_jobs.sql` itself at startup, idempotently, before it starts
+No manual step needed here. The backend applies `Backend/sql/schema.sql` and
+`Backend/sql/seed_jobs.sql` itself at startup, idempotently, before it starts
 accepting requests, this runs identically whether it's talking to the local
 Docker Postgres container or a real RDS instance, since it's the
 application doing it, not something depending on Postgres's
@@ -332,7 +332,7 @@ definition, and the frontend upload/CloudFront steps.
 1. ECR Console > Create repository, name: `nextstep-backend`, private
 2. Use the repository's "View push commands" button, run the shown
    `docker login`, `docker build`, `docker tag`, `docker push` commands
-   locally against `server/Dockerfile`
+   locally against `Backend/Dockerfile`
 3. Confirm the image appears with a tag (e.g. `latest`)
 4. Note the full image URI shown in the repository
 
@@ -538,38 +538,24 @@ Do not move on to the frontend until this step returns real JSON.
 
 ---
 
-## 13. Frontend: build and upload to S3
+## 13. Frontend: upload to S3
 
-The frontend build is a build-time step, the backend's URL gets baked into
-the static JS bundle, so wait until the ALB (or a custom domain) address is
-known and confirmed working (step 12) before building.
+The built static assets are already committed in the repo at
+`Frontend/static/` -- no build step needed here. Wait until the ALB (or a
+custom domain) address is known and confirmed working (step 12) before
+uploading, since the runtime backend URL is set via `config.js` (see below),
+not baked in at build time.
 
-The Vite project outputs to `static/` (not the default `dist/`).
-
-1. From `client/`, build with the production API URL as a build argument,
-   **including the `/api` path suffix**:
+1. Upload the contents of `Frontend/static/` to the frontend bucket from
+   step 6:
    ```
-   docker build --build-arg VITE_API_URL=http://<alb-dns-name>/api \
-     --target build -t nextstep-frontend-build .
-   ```
-   (confirm the exact build stage name in `client/Dockerfile` if `build`
-   isn't correct, and confirm the internal output path in the next step
-   against the same file, rather than assuming)
-2. Extract the built static files:
-   ```
-   docker create --name nextstep-extract nextstep-frontend-build
-   docker cp nextstep-extract:/app/static ./static
-   docker rm nextstep-extract
-   ```
-3. Upload the contents of `./static` to the frontend bucket from step 6:
-   ```
-   aws s3 sync static/ s3://nextstep-frontend-<suffix>/
+   aws s3 sync Frontend/static/ s3://nextstep-frontend-<suffix>/
    ```
    or via S3 Console > Upload
 
 ### Runtime-editable backend URL (config.js)
 
-`client/public/config.js` ships with an empty default and gets copied into
+`Frontend/public/config.js` ships with an empty default and gets copied into
 the build output automatically:
 ```js
 window.APP_CONFIG = {
